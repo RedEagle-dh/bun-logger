@@ -1,0 +1,61 @@
+{
+  "name": "bun-logger",
+  "version": "0.1.0",
+  "description": "A high-performance, Bun-native structured logger with OpenTelemetry support",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./worker": {
+      "import": "./dist/worker/index.js",
+      "types": "./dist/worker/index.d.ts"
+    },
+    "./otel": {
+      "import": "./dist/otel/index.js",
+      "types": "./dist/otel/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --target bun && bun run build:types",
+    "build:types": "tsc --emitDeclarationOnly",
+    "test": "bun test",
+    "bench": "bun run ./bench/index.ts",
+    "example": "bun run ./examples/basic.ts"
+  },
+  "keywords": [
+    "bun",
+    "logger",
+    "logging",
+    "pino",
+    "opentelemetry",
+    "otel",
+    "tracing",
+    "structured-logging"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.3.0"
+  },
+  "peerDependencies": {
+    "@opentelemetry/api": "^1.7.0"
+  },
+  "peerDependenciesMeta": {
+    "@opentelemetry/api": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  }
+}
