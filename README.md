@@ -14,9 +14,7 @@ A high-performance, Bun-native structured logger with OpenTelemetry support.
 
 ## Installation
 
-```bash
-bun add bun-logger
-```
+Package coming soon
 
 ## Quick Start
 
