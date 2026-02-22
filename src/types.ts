@@ -10,8 +10,6 @@ export type Serializer<T = unknown> = (value: T) => unknown;
  */
 export interface RedactOptions {
   paths: string[];
-  censor?: string | ((value: unknown, path: string) => unknown);
-  remove?: boolean;
 }
 
 /**
@@ -150,13 +148,6 @@ export interface LoggerOptions {
   /** Custom serializers for specific keys */
   serializers?: Record<string, Serializer>;
 
-  /** Formatters for transforming log record parts */
-  formatters?: {
-    level?: (label: string, number: number) => Record<string, unknown>;
-    bindings?: (bindings: Record<string, unknown>) => Record<string, unknown>;
-    log?: (obj: Record<string, unknown>) => Record<string, unknown>;
-  };
-
   /** Output destination */
   destination?: Destination;
 
@@ -180,7 +171,7 @@ export interface ChildLoggerOptions {
  */
 export interface LogRecord {
   level: number;
-  time: number;
+  time: number | string;
   pid: number;
   hostname: string;
   msg?: string;
@@ -258,12 +249,17 @@ export interface Logger {
   /** Flush any buffered logs */
   flush(): Promise<void>;
 
+  /** Gracefully shutdown the logger, flushing all buffers and stopping exporters */
+  shutdown(): Promise<void>;
+
   /** Start a new span and return a spanned logger */
   startSpan(name: string, options?: Partial<SpanOptions>): SpannedLogger;
 
   /** Run a function within a span */
   withSpan<T>(name: string, fn: (logger: SpannedLogger) => T): T;
   withSpan<T>(name: string, options: Partial<SpanOptions>, fn: (logger: SpannedLogger) => T): T;
+  withSpan<T>(name: string, fn: (logger: SpannedLogger) => Promise<T>): Promise<T>;
+  withSpan<T>(name: string, options: Partial<SpanOptions>, fn: (logger: SpannedLogger) => Promise<T>): Promise<T>;
 
   /** Create a child logger with explicit trace context */
   withTraceContext(context: TraceContext): Logger;

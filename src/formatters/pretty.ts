@@ -1,5 +1,4 @@
 import type { Formatter, LogRecord } from '../types';
-import { levelToName } from '../levels';
 
 /**
  * ANSI color codes

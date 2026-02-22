@@ -11,7 +11,7 @@ export const LogLevels = {
   silent: Infinity,
 } as const;
 
-export type LogLevelName = keyof Omit<typeof LogLevels, 'silent'>;
+export type LogLevelName = keyof typeof LogLevels;
 export type LogLevelNumber = (typeof LogLevels)[keyof typeof LogLevels];
 
 /**

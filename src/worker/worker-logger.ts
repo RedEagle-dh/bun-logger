@@ -153,7 +153,7 @@ export function spawnLoggerAwareWorker(
 
     // Extract config from logger (we need to access private fields indirectly)
     const config: Partial<LoggerOptions> = {
-      name: (logger as unknown as { '#options': { name?: string } })['#options']?.name,
+      name: logger.bindings().name as string | undefined,
       level: logger.level,
       base: logger.bindings(),
     };

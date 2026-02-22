@@ -17,7 +17,7 @@ import { createFormatter, type FormatType, type OutputStyle } from './formatters
 import { createDestination, type Writer } from './output';
 import { defaultSerializers } from './serializers';
 import { resolveTraceContext, runWithTraceContext } from './otel/context';
-import { LoggerSpan, type SpanData } from './otel/span';
+import { LoggerSpan } from './otel/span';
 import { OtlpLogExporter, OtlpSpanExporter } from './otel/exporter';
 
 /**
@@ -59,36 +59,43 @@ export class Logger implements ILogger {
   error!: LogMethod;
   fatal!: LogMethod;
 
-  constructor(options: LoggerOptions = {}) {
+  constructor(options: LoggerOptions = {}, _skipInit = false) {
     // Resolve options with defaults
     this.#options = this.#resolveOptions(options);
     this.#levelValue = LogLevels[this.#options.level];
     this.#bindings = this.#buildBaseBindings();
-    this.#formatter = createFormatter({
-      format: this.#options.format,
-      outputStyle: this.#options.outputStyle,
-      fieldNames: this.#options.fieldNames,
-      resource: this.#options.otel ? {
-        'service.name': this.#options.otel.serviceName,
-        ...this.#options.otel.resourceAttributes,
-      } : undefined,
-    });
-    this.#write = createDestination(options.destination ?? 'stdout');
 
     // Cache system info for performance
-    this.#hostname = typeof Bun !== 'undefined' && Bun.hostname ? Bun.hostname() : require('os').hostname();
+    this.#hostname = typeof Bun !== 'undefined' && 'hostname' in Bun ? (Bun as unknown as { hostname(): string }).hostname() : require('os').hostname();
     this.#pid = process.pid;
 
-    // Initialize OTEL exporters if configured
-    if (this.#options.otel && this.#options.otel.exporter) {
-      const resource: Record<string, string | number | boolean> = {
-        'service.name': this.#options.otel.serviceName,
-        ...(this.#options.otel.serviceVersion && { 'service.version': this.#options.otel.serviceVersion }),
-        ...this.#options.otel.resourceAttributes,
-      };
+    if (_skipInit) {
+      // Child loggers inherit formatter, writer, and exporters from parent
+      this.#formatter = undefined!;
+      this.#write = undefined!;
+    } else {
+      this.#formatter = createFormatter({
+        format: this.#options.format,
+        outputStyle: this.#options.outputStyle,
+        fieldNames: this.#options.fieldNames,
+        resource: this.#options.otel ? {
+          'service.name': this.#options.otel.serviceName,
+          ...this.#options.otel.resourceAttributes,
+        } : undefined,
+      });
+      this.#write = createDestination(options.destination ?? 'stdout');
 
-      this.#logExporter = new OtlpLogExporter(this.#options.otel.exporter, resource);
-      this.#spanExporter = new OtlpSpanExporter(this.#options.otel.exporter, resource);
+      // Initialize OTEL exporters if configured
+      if (this.#options.otel && this.#options.otel.exporter) {
+        const resource: Record<string, string | number | boolean> = {
+          'service.name': this.#options.otel.serviceName,
+          ...(this.#options.otel.serviceVersion && { 'service.version': this.#options.otel.serviceVersion }),
+          ...this.#options.otel.resourceAttributes,
+        };
+
+        this.#logExporter = new OtlpLogExporter(this.#options.otel.exporter, resource);
+        this.#spanExporter = new OtlpSpanExporter(this.#options.otel.exporter, resource);
+      }
     }
 
     // Bind log methods
@@ -124,7 +131,7 @@ export class Logger implements ILogger {
       level: options?.level ?? this.#options.level,
       serializers: { ...this.#options.serializers, ...options?.serializers },
       base: { ...this.#bindings, ...bindings },
-    });
+    }, true);
 
     // Inherit trace context
     childLogger.#traceContext = this.#traceContext;
@@ -165,6 +172,18 @@ export class Logger implements ILogger {
     }
     if (this.#spanExporter) {
       await this.#spanExporter.flush();
+    }
+  }
+
+  /**
+   * Gracefully shutdown the logger
+   */
+  async shutdown(): Promise<void> {
+    if (this.#logExporter) {
+      await this.#logExporter.shutdown();
+    }
+    if (this.#spanExporter) {
+      await this.#spanExporter.shutdown();
     }
   }
 
@@ -287,14 +306,6 @@ export class Logger implements ILogger {
     };
   }
 
-  /**
-   * Get the write function (for child loggers to inherit)
-   * @internal
-   */
-  _getWriter(): Writer {
-    return this.#write;
-  }
-
   #buildBaseBindings(): Record<string, unknown> {
     const bindings: Record<string, unknown> = {};
 
@@ -323,9 +334,9 @@ export class Logger implements ILogger {
         );
       }
 
-      // Sync flush for fatal
+      // Flush for fatal (best-effort, don't block)
       if (levelName === 'fatal') {
-        this.flush();
+        this.flush().catch(console.error);
       }
     };
   }
@@ -370,11 +381,10 @@ export class Logger implements ILogger {
     return record;
   }
 
-  #getTimestamp(): number {
+  #getTimestamp(): number | string {
     if (this.#options.timestamp === false) return 0;
     if (typeof this.#options.timestamp === 'function') {
-      const ts = this.#options.timestamp();
-      return typeof ts === 'number' ? ts : Date.now();
+      return this.#options.timestamp();
     }
     return Date.now();
   }
@@ -477,7 +487,6 @@ export class Logger implements ILogger {
  * Spanned Logger - a logger bound to a span
  */
 class SpannedLogger implements ISpannedLogger {
-  #parent: Logger;
   #span: LoggerSpan;
   #childLogger: Logger;
 
@@ -490,7 +499,6 @@ class SpannedLogger implements ISpannedLogger {
   fatal: LogMethod;
 
   constructor(parent: Logger, span: LoggerSpan) {
-    this.#parent = parent;
     this.#span = span;
     this.#childLogger = parent.withTraceContext(span.context);
 
@@ -533,6 +541,10 @@ class SpannedLogger implements ISpannedLogger {
 
   flush(): Promise<void> {
     return this.#childLogger.flush();
+  }
+
+  shutdown(): Promise<void> {
+    return this.#childLogger.shutdown();
   }
 
   startSpan(name: string, options?: Partial<SpanOptions>): ISpannedLogger {

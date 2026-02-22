@@ -1,3 +1,4 @@
+import { appendFileSync, openSync, writeSync, closeSync, statSync } from 'node:fs';
 import type { Writer } from './stdout';
 
 /**
@@ -20,39 +21,83 @@ export interface FileDestinationOptions {
 export function createFileDestination(options: FileDestinationOptions): Writer {
   const { path, append = true, sync = false, bufferSize = 4096 } = options;
 
-  // Use Bun's file writer for efficient buffered writes
-  const file = Bun.file(path);
+  if (!append) {
+    // Non-append (overwrite) mode — Bun.write works fine here
+    if (sync) {
+      return (data: string) => {
+        Bun.write(path, data);
+      };
+    }
 
-  if (sync) {
-    // Synchronous writes - less efficient but guaranteed order
+    let buffer = '';
+    let flushScheduled = false;
+
+    const flush = async () => {
+      if (buffer.length === 0) return;
+      const data = buffer;
+      buffer = '';
+      flushScheduled = false;
+
+      try {
+        await Bun.write(path, data);
+      } catch (err) {
+        console.error(`[bun-logger] Failed to write to ${path}:`, err);
+      }
+    };
+
     return (data: string) => {
-      Bun.write(path, data, { append });
+      buffer += data;
+
+      if (Buffer.byteLength(buffer) >= bufferSize) {
+        flush();
+      } else if (!flushScheduled) {
+        flushScheduled = true;
+        queueMicrotask(() => flush());
+      }
     };
   }
 
-  // Buffered async writes
+  // Append mode — use node:fs since Bun.write ignores the append option
+  if (sync) {
+    return (data: string) => {
+      appendFileSync(path, data);
+    };
+  }
+
+  // Buffered append writes
   let buffer = '';
   let flushScheduled = false;
+  let fd: number | undefined;
 
-  const flush = async () => {
+  const getFd = (): number => {
+    if (fd === undefined) {
+      fd = openSync(path, 'a');
+    }
+    return fd;
+  };
+
+  const flush = () => {
     if (buffer.length === 0) return;
     const data = buffer;
     buffer = '';
     flushScheduled = false;
 
     try {
-      await Bun.write(path, data, { append });
+      writeSync(getFd(), data);
     } catch (err) {
-      // Log write errors to stderr
       console.error(`[bun-logger] Failed to write to ${path}:`, err);
+      // Reset fd in case file was moved/deleted
+      if (fd !== undefined) {
+        try { closeSync(fd); } catch { /* ignore */ }
+        fd = undefined;
+      }
     }
   };
 
   return (data: string) => {
     buffer += data;
 
-    if (buffer.length >= bufferSize) {
-      // Flush immediately if buffer is full
+    if (Buffer.byteLength(buffer) >= bufferSize) {
       flush();
     } else if (!flushScheduled) {
       flushScheduled = true;
@@ -79,8 +124,7 @@ export function createRotatingFileDestination(options: RotatingFileOptions): Wri
 
   // Get initial file size
   try {
-    const file = Bun.file(path);
-    currentSize = file.size;
+    currentSize = statSync(path).size;
   } catch {
     currentSize = 0;
   }
@@ -121,7 +165,7 @@ export function createRotatingFileDestination(options: RotatingFileOptions): Wri
   };
 
   return (data: string) => {
-    currentSize += data.length;
+    currentSize += Buffer.byteLength(data);
 
     if (currentSize >= maxSize && !rotating) {
       rotate();

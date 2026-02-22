@@ -178,6 +178,17 @@ export function withSpan<T>(
 ): T;
 export function withSpan<T>(
   name: string,
+  fn: (span: Span) => Promise<T>,
+  onEnd?: (span: SpanData) => void
+): Promise<T>;
+export function withSpan<T>(
+  name: string,
+  options: Partial<SpanOptions>,
+  fn: (span: Span) => Promise<T>,
+  onEnd?: (span: SpanData) => void
+): Promise<T>;
+export function withSpan<T>(
+  name: string,
   optionsOrFn: Partial<SpanOptions> | ((span: Span) => T),
   fnOrOnEnd?: ((span: Span) => T) | ((span: SpanData) => void),
   maybeOnEnd?: (span: SpanData) => void

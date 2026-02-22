@@ -1,6 +1,30 @@
 import type { Serializer } from '../types';
 
 /**
+ * Headers that should be filtered from serialized request/response objects
+ */
+const SENSITIVE_HEADERS = new Set([
+  'authorization',
+  'cookie',
+  'set-cookie',
+  'x-api-key',
+  'proxy-authorization',
+]);
+
+/**
+ * Filter sensitive headers from a Headers object
+ */
+function filterHeaders(headers: Headers): Record<string, string> {
+  const filtered: Record<string, string> = {};
+  for (const [key, value] of headers.entries()) {
+    if (!SENSITIVE_HEADERS.has(key.toLowerCase())) {
+      filtered[key] = value;
+    }
+  }
+  return filtered;
+}
+
+/**
  * Serialized error structure
  */
 export interface SerializedError {
@@ -37,7 +61,7 @@ export const errorSerializer: Serializer<Error> = (err: Error): SerializedError 
   // Include any additional enumerable properties
   for (const key of Object.keys(err)) {
     if (!['name', 'message', 'stack', 'code'].includes(key)) {
-      serialized[key] = (err as Record<string, unknown>)[key];
+      serialized[key] = (err as unknown as Record<string, unknown>)[key];
     }
   }
 
@@ -56,7 +80,7 @@ export const requestSerializer: Serializer<Request> = (req: Request) => {
   return {
     method: req.method,
     url: req.url,
-    headers: Object.fromEntries(req.headers.entries()),
+    headers: filterHeaders(req.headers),
   };
 };
 
@@ -67,6 +91,6 @@ export const responseSerializer: Serializer<Response> = (res: Response) => {
   return {
     status: res.status,
     statusText: res.statusText,
-    headers: Object.fromEntries(res.headers.entries()),
+    headers: filterHeaders(res.headers),
   };
 };

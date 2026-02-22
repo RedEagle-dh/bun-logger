@@ -115,6 +115,11 @@ export class OtlpLogExporter {
       ...resource,
     };
 
+    // Warn if sending auth headers over non-HTTPS
+    if (config.headers && Object.keys(config.headers).length > 0 && !config.endpoint.startsWith('https://')) {
+      console.warn('[bun-logger] OTLP log exporter: sending headers over non-HTTPS endpoint is insecure');
+    }
+
     // Start periodic flush
     this.#startFlushTimer();
   }
@@ -268,6 +273,7 @@ export class OtlpSpanExporter {
   #resource: Record<string, string | number | boolean>;
   #batch: SpanData[] = [];
   #batchTimer?: Timer;
+  #flushing = false;
 
   constructor(
     config: OtelExporterConfig,
@@ -286,6 +292,11 @@ export class OtlpSpanExporter {
       'telemetry.sdk.version': '0.1.0',
       ...resource,
     };
+
+    // Warn if sending auth headers over non-HTTPS
+    if (config.headers && Object.keys(config.headers).length > 0 && !config.endpoint.startsWith('https://')) {
+      console.warn('[bun-logger] OTLP span exporter: sending headers over non-HTTPS endpoint is insecure');
+    }
 
     this.#startFlushTimer();
   }
@@ -309,8 +320,9 @@ export class OtlpSpanExporter {
   }
 
   async flush(): Promise<void> {
-    if (this.#batch.length === 0) return;
+    if (this.#batch.length === 0 || this.#flushing) return;
 
+    this.#flushing = true;
     const spans = this.#batch;
     this.#batch = [];
 
@@ -332,6 +344,8 @@ export class OtlpSpanExporter {
       }
     } catch (error) {
       console.error('[bun-logger] OTLP span export error:', error);
+    } finally {
+      this.#flushing = false;
     }
   }
 

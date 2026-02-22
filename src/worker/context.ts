@@ -1,5 +1,7 @@
 import type { TraceContext } from '../types';
 
+declare const self: Worker | undefined;
+
 /**
  * Current trace context in worker thread
  */
